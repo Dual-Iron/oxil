@@ -1,287 +1,162 @@
 use arrayvec::ArrayString;
 
-use crate::error::ReadImageError;
-use crate::error::ReadImageResult;
-use crate::read;
+use crate::error::{InvalidImageReason::*, ReadImageError::*, ReadImageResult};
+use crate::io::{r, ReadExt, SeekExt};
 use std::io::{Read, Seek};
+use std::mem::MaybeUninit;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ImageHeader {
-    // COFF file header
-    number_of_sections: u16,
-    time_date_stamp: u32,
-    pointer_to_symbol_table: u32,
-    number_of_symbols: u32,
-    size_of_optional_header: u16,
-    characteristics: u16,
+    pub coff: Coff,
+    pub opt: Optional,
+    pub dirs: [DataDirectory; 16],
+    pub sections: Vec<Section>,
+}
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Coff {
+    pub machine: u16,
+    pub number_of_sections: u16,
+    pub time_date_stamp: u32,
+    pub pointer_to_symbol_table: u32,
+    pub number_of_symbols: u32,
+    pub size_of_optional_header: u16,
+    pub characteristics: u16,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Optional {
     // Optional Header Standard Fields
-    pe64: bool,
-    major_linker_version: u8,
-    minor_linker_version: u8,
-    size_of_code: u32,
-    size_of_initialized_data: u32,
-    size_of_uninitialized_data: u32,
-    address_of_entry_point: u32,
-    base_of_code: u32,
+    pub major_linker_version: u8,
+    pub minor_linker_version: u8,
+    pub size_of_code: u32,
+    pub size_of_initialized_data: u32,
+    pub size_of_uninitialized_data: u32,
+    pub address_of_entry_point: u32,
+    pub base_of_code: u32,
+    pub base_of_data: Option<u32>,
 
     // Optional Header Windows-Specific Fields
-    base_of_data: Option<u32>,
-    image_base: u64,
-    section_alignment: u32,
-    file_alignment: u32,
-    major_operating_system_version: u16,
-    minor_operating_system_version: u16,
-    major_image_version: u16,
-    minor_image_version: u16,
-    major_subsystem_version: u16,
-    minor_subsystem_version: u16,
-    size_of_image: u32,
-    size_of_headers: u32,
-    subsystem: u16,
-    dll_characteristics: u16,
-    size_of_stack_reserve: u64,
-    size_of_stack_commit: u64,
-    size_of_heap_reserve: u64,
-    size_of_heap_commit: u64,
-
-    // Optional Header Data Directories
-    export: DataDirectory,
-    import: DataDirectory,
-    resource: DataDirectory,
-    exception: DataDirectory,
-    certificate: DataDirectory,
-    base_relocation: DataDirectory,
-    debug: DataDirectory,
-    global_ptr: DataDirectory,
-    tls: DataDirectory,
-    load_config: DataDirectory,
-    bound_import: DataDirectory,
-    iat: DataDirectory,
-    delay_import_descriptor: DataDirectory,
-    clr_runtime_header: DataDirectory,
-
-    // Section headers
-    sections: Vec<SectionHeader>,
+    pub image_base: u64,
+    pub section_alignment: u32,
+    pub file_alignment: u32,
+    pub major_operating_system_version: u16,
+    pub minor_operating_system_version: u16,
+    pub major_image_version: u16,
+    pub minor_image_version: u16,
+    pub major_subsystem_version: u16,
+    pub minor_subsystem_version: u16,
+    pub size_of_image: u32,
+    pub size_of_headers: u32,
+    pub subsystem: u16,
+    pub dll_characteristics: u16,
+    pub size_of_stack_reserve: u64,
+    pub size_of_stack_commit: u64,
+    pub size_of_heap_reserve: u64,
+    pub size_of_heap_commit: u64,
+    pub num_data_dirs: u32,
 }
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct DataDirectory {
+    pub rva: u32,
+    pub size: u32,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Section {
+    pub name: SectionName,
+    pub virtual_size: u32,
+    pub virtual_addr: u32,
+    pub size_of_raw_data: u32,
+    pub pointer_to_raw_data: u32,
+    pub characteristics: u32,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct SectionName(pub ArrayString<8>);
 
 impl ImageHeader {
     pub fn read(mut data: &mut (impl Read + Seek)) -> ReadImageResult<Self> {
-        // If any fields are skipped, it's because either:
-        // - they are "reserved" by MSDN [https://docs.microsoft.com/en-us/windows/win32/debug/pe-format]
-        // - replacing them with another value will never affect the resulting program
+        // https://docs.microsoft.com/en-us/windows/win32/debug/pe-format
+        // Fields are skipped if they are reserved, deprecated, or unerringly replaceable
 
-        read!(data for:
-            // DOS header
-            goto 0x3C,
-            pe_signature_offset: u32,
-            goto pe_signature_offset + 4,
+        data.jump(0x3C)?;
+        let offset: u16 = data.readv()?;
+        data.jump(offset.into())?;
 
-            // COFF file header
-            machine: u16,
-            number_of_sections: u16,
-            time_date_stamp: u32,
-            pointer_to_symbol_table: u32,
-            number_of_symbols: u32,
-            size_of_optional_header: u16,
-            characteristics: u16,
+        let coff = Coff {
+            machine: data.readv()?,
+            number_of_sections: data.readv()?,
+            time_date_stamp: data.readv()?,
+            pointer_to_symbol_table: data.readv()?,
+            number_of_symbols: data.readv()?,
+            size_of_optional_header: data.readv()?,
+            characteristics: data.readv()?,
+        };
 
-            // Optional Header Standard Fields
-            magic: u16,
-            major_linker_version: u8,
-            minor_linker_version: u8,
-            size_of_code: u32,
-            size_of_initialized_data: u32,
-            size_of_uninitialized_data: u32,
-            address_of_entry_point: u32,
-            base_of_code: u32,
-        );
-
-        if machine != 0x14C {
-            return Err(ReadImageError::InvalidImage);
-        }
-
-        let pe64 = match magic {
-            0x10B => false,
+        let pe64 = match data.readv()? {
+            0x10B_u16 => false,
             0x20B => true,
-            _ => return Err(ReadImageError::InvalidImage),
+            magic => return Err(InvalidImage(Magic(magic))),
         };
 
-        let base_of_data = if pe64 { None } else { Some(read! { data u32 }) };
-
-        // Optional Header Windows-Specific Fields
-        let image_base = match pe64 {
-            true => read! { data u64 },
-            false => (read! { data u32 }) as u64,
+        let opt = Optional {
+            major_linker_version: data.readv()?,
+            minor_linker_version: data.readv()?,
+            size_of_code: data.readv()?,
+            size_of_initialized_data: data.readv()?,
+            size_of_uninitialized_data: data.readv()?,
+            address_of_entry_point: data.readv()?,
+            base_of_code: data.readv()?,
+            base_of_data: if pe64 { None } else { Some(data.readv()?) },
+            image_base: r!(data: if pe64 => u64 | u32),
+            section_alignment: data.readv()?,
+            file_alignment: data.readv()?,
+            major_operating_system_version: data.readv()?,
+            minor_operating_system_version: data.readv()?,
+            major_image_version: data.readv()?,
+            minor_image_version: data.readv()?,
+            major_subsystem_version: data.readv()?,
+            minor_subsystem_version: r!(eval data.readv()?, then data.jump(4)?), // skip Win32VersionValue, must be zero
+            size_of_image: data.readv()?,
+            size_of_headers: r!(eval data.readv()?, then data.jump(4)?), // skip CheckSum, I don't know what to do with it anyway
+            subsystem: data.readv()?,
+            dll_characteristics: data.readv()?,
+            size_of_stack_reserve: r!(data: if pe64 => u64 | u32),
+            size_of_stack_commit: r!(data: if pe64 => u64 | u32),
+            size_of_heap_reserve: r!(data: if pe64 => u64 | u32),
+            size_of_heap_commit: r!(eval r!(data: if pe64 => u64 | u32), then data.jump(4)?), // skip LoaderFlags, must be zero
+            num_data_dirs: data.readv()?,
         };
 
-        read!(data for:
-            section_alignment: u32,
-            file_alignment: u32,
-            major_operating_system_version: u16,
-            minor_operating_system_version: u16,
-            major_image_version: u16,
-            minor_image_version: u16,
-            major_subsystem_version: u16,
-            minor_subsystem_version: u16,
-            skip 4,
-            size_of_image: u32,
-            size_of_headers: u32,
-            skip 4, // ignore checksum
-            subsystem: u16,
-            dll_characteristics: u16,
-        );
-
-        let (
-            size_of_stack_reserve,
-            size_of_stack_commit,
-            size_of_heap_reserve,
-            size_of_heap_commit,
-        ) = if pe64 {
-            read! { data for: a: u64, b: u64, c: u64, d: u64, };
-            (a, b, c, d)
-        } else {
-            read! { data for: a: u32, b: u32, c: u32, d: u32, };
-            (a as u64, b as u64, c as u64, d as u64)
-        };
-
-        read!(data for:
-            skip 4,
-            number_of_rva_and_sizes: u32,
-
-            // Optional Header Data Directories
-            export: DataDirectory,
-            import: DataDirectory,
-            resource: DataDirectory,
-            exception: DataDirectory,
-            certificate: DataDirectory,
-            base_relocation: DataDirectory,
-            debug: DataDirectory,
-            skip 8,
-            global_ptr: DataDirectory,
-            tls: DataDirectory,
-            load_config: DataDirectory,
-            bound_import: DataDirectory,
-            iat: DataDirectory,
-            delay_import_descriptor: DataDirectory,
-            clr_runtime_header: DataDirectory,
-            skip 8,
-        );
-
-        if number_of_rva_and_sizes < 16 {
-            return Err(ReadImageError::InvalidImage);
+        if opt.num_data_dirs != 16 {
+            dbg!(opt.num_data_dirs);
+            return Err(InvalidImage(DataDirectories(opt.num_data_dirs)));
         }
 
-        let mut sections = Vec::with_capacity(number_of_sections as usize);
-
-        for _ in 0..number_of_sections {
-            read!(data for:
-                name: str8,
-                virtual_size: u32,
-                virtual_addr: u32,
-                size_of_raw_data: u32,
-                pointer_to_raw_data: u32,
-                skip 12,
-                characteristics: u32,
-            );
-            sections.push(SectionHeader {
-                name,
-                virtual_size,
-                virtual_addr,
-                size_of_raw_data,
-                pointer_to_raw_data,
-                characteristics,
-            })
+        let mut dirs = [DataDirectory { rva: 0, size: 0 }; 16];
+        for i in 0..16 {
+            dirs[i] = data.readv()?;
         }
 
-        Ok(ImageHeader {
-            number_of_sections,
-            time_date_stamp,
-            pointer_to_symbol_table,
-            number_of_symbols,
-            size_of_optional_header,
-            characteristics,
-            pe64,
-            major_linker_version,
-            minor_linker_version,
-            size_of_code,
-            size_of_initialized_data,
-            size_of_uninitialized_data,
-            address_of_entry_point,
-            base_of_code,
-            base_of_data,
-            image_base,
-            section_alignment,
-            file_alignment,
-            major_operating_system_version,
-            minor_operating_system_version,
-            major_image_version,
-            minor_image_version,
-            major_subsystem_version,
-            minor_subsystem_version,
-            size_of_image,
-            size_of_headers,
-            subsystem,
-            dll_characteristics,
-            size_of_stack_reserve,
-            size_of_stack_commit,
-            size_of_heap_reserve,
-            size_of_heap_commit,
-            export,
-            import,
-            resource,
-            exception,
-            certificate,
-            base_relocation,
-            debug,
-            global_ptr,
-            tls,
-            load_config,
-            bound_import,
-            iat,
-            delay_import_descriptor,
-            clr_runtime_header,
+        let mut sections = Vec::with_capacity(coff.number_of_sections.into());
+        for _ in 0..coff.number_of_sections {
+            sections.push(Section {
+                name: data.readv()?,
+                virtual_size: data.readv()?,
+                virtual_addr: data.readv()?,
+                size_of_raw_data: data.readv()?,
+                pointer_to_raw_data: r!(eval data.readv()?, then data.jump(12)?),
+                characteristics: data.readv()?,
+            });
+        }
+
+        Ok(Self {
+            coff,
+            opt,
+            dirs,
             sections,
         })
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct DataDirectory {
-    rva: u32,
-    size: u32,
-}
-
-impl DataDirectory {
-    fn from_le_bytes(bytes: [u8; 8]) -> Self {
-        Self {
-            rva: u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
-            size: u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]),
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct SectionHeader {
-    name: ArrayString<8>,
-    virtual_size: u32,
-    virtual_addr: u32,
-    size_of_raw_data: u32,
-    pointer_to_raw_data: u32,
-    characteristics: u32,
-}
-
-#[cfg(test)]
-mod tests {
-    use std::io::Cursor;
-
-    #[test]
-    fn it_works() -> std::io::Result<()> {
-        let mut data = include_bytes!("../HelloWorld.dll").as_ref();
-        let mut data = Cursor::new(&mut data);
-
-        dbg!(super::ImageHeader::read(&mut data).expect("success"));
-
-        Ok(())
     }
 }
