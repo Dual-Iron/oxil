@@ -3,7 +3,6 @@ use arrayvec::ArrayString;
 use crate::error::{InvalidImageReason::*, ReadImageError::*, ReadImageResult};
 use crate::io::{r, ReadExt, SeekExt};
 use std::io::{Read, Seek};
-use std::mem::MaybeUninit;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ImageHeader {
@@ -76,14 +75,36 @@ pub struct Section {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct SectionName(pub ArrayString<8>);
 
+#[repr(usize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum DataDirectories {
+    Export = 0,
+    Import = 1,
+    Resource = 2,
+    Exception = 3,
+    Certificate = 4,
+    BaseRelocation = 5,
+    Debug = 6,
+    Reserved1 = 7,
+    GlobalPtr = 8,
+    TLS = 9,
+    LoadConfig = 10,
+    BoundImport = 11,
+    IAT = 12,
+    DelayImportDescriptor = 13,
+    ClrRuntimeHeader = 14,
+    Reserved2 = 15,
+}
+
 impl ImageHeader {
     pub fn read(mut data: &mut (impl Read + Seek)) -> ReadImageResult<Self> {
         // https://docs.microsoft.com/en-us/windows/win32/debug/pe-format
         // Fields are skipped if they are reserved, deprecated, or unerringly replaceable
 
         data.jump(0x3C)?;
-        let offset: u16 = data.readv()?;
-        data.jump(offset.into())?;
+        let mut offset: u16 = data.readv()?;
+        offset += 4;
+        data.goto(offset.into())?;
 
         let coff = Coff {
             machine: data.readv()?,
