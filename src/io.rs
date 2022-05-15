@@ -18,7 +18,7 @@ fn arrstr_from<const CAP: usize>(b: &[u8]) -> std::result::Result<ArrayString<CA
     std::str::from_utf8(b).map(|s| ArrayString::try_from(s).unwrap())
 }
 
-// -- Seek --
+// # Seek
 
 pub trait SeekExt {
     fn jump(&mut self, offset: i64) -> Result<u64>;
@@ -35,7 +35,7 @@ impl<T: Seek> SeekExt for T {
     }
 }
 
-// -- Read --
+// # Read
 
 pub trait ReadBytes {
     fn read_bytes<const LEN: usize>(&mut self) -> Result<[u8; LEN]>;
@@ -151,7 +151,7 @@ readext!(int u64);
 readext!(flags AssemblyFlags);
 readext!(enum AssemblyHashAlgorithm: u32);
 
-// -- Read + Seek --
+// # Read + Seek
 
 macro_rules! r {
     (eval $e:expr, then $jmp:expr) => {{

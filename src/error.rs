@@ -21,6 +21,7 @@ pub enum InvalidImageReason {
     StreamName(ArrayString<32>),
     StreamDuplicate(ArrayString<32>),
     TableCount(u64),
+    CodedIndex(u8),
 }
 
 impl From<std::io::Error> for ReadImageError {
@@ -59,6 +60,7 @@ impl Display for InvalidImageReason {
             StreamName(n) => f!("invalid metadata stream name: {n}"),
             StreamDuplicate(n) => f!("duplicate metadata stream: {n}"),
             TableCount(n) => f!("too many valid tables: {n:b}"),
+            CodedIndex(n) => f!("invalid coded index value: {n:b}"),
         }
     }
 }
