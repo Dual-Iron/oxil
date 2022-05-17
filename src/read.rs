@@ -1,11 +1,10 @@
 use crate::{
     error::{ReadImageError::*, ReadImageResult},
-    io::SeekExt,
     metadata::{CliHeader, MetadataRoot},
     pe::{self, ImageHeader},
     schema::{parsing, Db},
+    ModuleRead,
 };
-use std::io::{BufRead, Seek};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Image {
@@ -19,7 +18,7 @@ pub struct Image {
 }
 
 impl Image {
-    pub fn read(data: &mut (impl BufRead + Seek)) -> ReadImageResult<Self> {
+    pub fn read(data: &mut impl ModuleRead) -> ReadImageResult<Self> {
         let pe = ImageHeader::read(data)?;
         let rva = pe.opt.clr_runtime_header.rva;
         data.goto(
@@ -34,11 +33,11 @@ impl Image {
                 .ok_or(RvaOutOfRange(rva))?
                 .into(),
         )?;
-        let metadata_offset = data.stream_position()?;
+        let metadata_offset = data.pos()?;
         let metadata = MetadataRoot::read(data)?;
         data.goto(metadata_offset + metadata.tables.offset as u64)?;
         let db = Db::read(data)?;
-        let tables_offset = data.stream_position()?;
+        let tables_offset = data.pos()?;
 
         Ok(Self {
             pe,
@@ -51,12 +50,12 @@ impl Image {
     }
 }
 
-pub struct DeferredReader<T: BufRead + Seek> {
+pub struct DeferredReader<T: ModuleRead> {
     image: Image,
     data: T,
 }
 
-impl<T: BufRead + Seek> DeferredReader<T> {
+impl<T: ModuleRead> DeferredReader<T> {
     pub fn read(mut data: T) -> ReadImageResult<Self> {
         Ok(Self {
             image: Image::read(&mut data)?,
@@ -79,6 +78,15 @@ impl<T: BufRead + Seek> DeferredReader<T> {
     }
 }
 
+impl<T: ModuleRead + Clone> Clone for DeferredReader<T> {
+    fn clone(&self) -> Self {
+        Self {
+            image: self.image.clone(),
+            data: self.data.clone(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,8 +94,7 @@ mod tests {
 
     #[test]
     fn module_table() {
-        let mut data = crate::hello_world_test();
-        let mut reader = DeferredReader::read(&mut data).unwrap();
+        let mut reader = DeferredReader::read(crate::hello_world_test()).unwrap();
         let module: Option<Module> = reader.row(0).unwrap();
 
         assert_eq!(

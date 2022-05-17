@@ -5,11 +5,11 @@ pub(crate) mod parsing;
 
 use crate::{
     error::{ReadImageError::*, ReadImageResult},
-    io::{ReadExt, SeekExt},
+    ModuleRead,
 };
 use num_enum::TryFromPrimitive;
 use parsing::{DbMeta, Table, TableIndex};
-use std::io::{BufRead, Seek};
+use std::io::{Error, ErrorKind};
 
 const TABLE_COUNT: usize = 0x2D;
 
@@ -23,21 +23,21 @@ pub struct Db {
 }
 
 impl Db {
-    pub fn read(data: &mut (impl BufRead + Seek)) -> ReadImageResult<Self> {
-        data.jump(6)?;
-        let lstreams = data.readv()?;
-        data.jump(1)?;
-        let valid: u64 = data.readv()?;
+    pub fn read(data: &mut impl ModuleRead) -> ReadImageResult<Self> {
+        data.skip(6)?;
+        let lstreams = data.u8()?;
+        data.skip(1)?;
+        let valid = data.u64()?;
         if valid >> TABLE_COUNT != 0 {
             return Err(TableCount(valid));
         }
-        data.jump(8)?; // Tables that should be sorted are listed in section II.24 and never change
+        data.skip(8)?; // Tables that should be sorted are listed in section II.24 and never change
 
         let mut row_count = [0u32; TABLE_COUNT];
 
         for i in 0..TABLE_COUNT {
             if (valid >> i) & 1 != 0 {
-                row_count[i] = data.readv()?;
+                row_count[i] = data.u32()?;
             }
         }
 
@@ -84,7 +84,7 @@ impl Db {
         self.offsets[idx as usize]
     }
 
-    pub fn row<Table: parsing::Table, Data: BufRead + Seek>(
+    pub fn row<Table: parsing::Table, Data: ModuleRead>(
         &self,
         data: &mut Data,
         table_stream_offset: u64,
@@ -112,25 +112,51 @@ impl Db {
 
 trait DbRead: Sized {
     fn size(db: DbMeta<'_>) -> u8;
-    fn read(db: DbMeta<'_>, data: &mut (impl BufRead + Seek)) -> ReadImageResult<Self>;
+    fn read(db: DbMeta<'_>, data: &mut impl ModuleRead) -> ReadImageResult<Self>;
 }
 
 macro_rules! db_read {
-    ($t:ty = $e:expr) => {
+    (prims $($t:ident)+) => {$(
         impl DbRead for $t {
             fn size(_: DbMeta<'_>) -> u8 {
-                $e
+                std::mem::size_of::<$t>() as u8
             }
-            fn read(_: DbMeta<'_>, data: &mut (impl BufRead + Seek)) -> ReadImageResult<Self> {
-                Ok(data.readv()?)
+            fn read(_: DbMeta<'_>, data: &mut impl ModuleRead) -> ReadImageResult<Self> {
+                Ok(data.$t()?)
             }
         }
-    };
+    )+};
+    (flags $($t:ty: $base:ident),+) => {$(
+        impl DbRead for $t {
+            fn size(_: DbMeta<'_>) -> u8 {
+                std::mem::size_of::<$base>() as u8
+            }
+            fn read(_: DbMeta<'_>, data: &mut impl ModuleRead) -> ReadImageResult<Self> {
+                let bits = data.$base()?;
+                match <$t>::from_bits(bits) {
+                    Some(s) => Ok(s),
+                    None => Err(IO(Error::new(ErrorKind::InvalidData, format!("invalid bit pattern: {bits:b}"))))
+                }
+            }
+        }
+    )+};
+    (enums $($t:ty: $base:ident),+) => {$(
+        impl DbRead for $t {
+            fn size(_: DbMeta<'_>) -> u8 {
+                std::mem::size_of::<$base>() as u8
+            }
+            fn read(_: DbMeta<'_>, data: &mut impl ModuleRead) -> ReadImageResult<Self> {
+                let raw = data.$base()?;
+                Ok(raw
+                    .try_into()
+                    .map_err(|e| Error::new(ErrorKind::Other, e))?)
+            }
+        }
+    )+}
 }
 
-db_read!(u8 = 1);
-db_read!(u16 = 2);
-db_read!(u32 = 4);
-db_read!(u64 = 8);
-db_read!(structures::AssemblyFlags = 4);
-db_read!(structures::AssemblyHashAlgorithm = 4);
+use structures::*;
+
+db_read!(prims u8 u16 u32 u64);
+db_read!(flags AssemblyFlags: u32);
+db_read!(enums AssemblyHashAlgorithm: u32);

@@ -47,12 +47,12 @@ macro_rules! db_read_stream {
                 }
             }
 
-            fn read(db: DbMeta<'_>, data: &mut (impl BufRead + Seek)) -> ReadImageResult<Self> {
-                Ok(if db.lstreams & $bit != 0 {
-                    Self(data.readv()?)
+            fn read(db: DbMeta<'_>, data: &mut impl ModuleRead) -> ReadImageResult<Self> {
+                Ok(Self(if db.lstreams & $bit != 0 {
+                    data.u32()?
                 } else {
-                    Self(ReadExt::<u16>::readv(data)?.into())
-                })
+                    data.u16()? as u32
+                }))
             }
         }
     };
@@ -71,14 +71,12 @@ impl<const TABLE: usize> DbRead for RowIndex<TABLE> {
         }
     }
 
-    fn read(db: DbMeta<'_>, data: &mut (impl BufRead + Seek)) -> ReadImageResult<Self> {
-        Ok(if db.rows[TABLE] > u16::MAX.into() {
-            // Read 4 bits
-            Self(data.readv()?)
+    fn read(db: DbMeta<'_>, data: &mut impl ModuleRead) -> ReadImageResult<Self> {
+        Ok(Self(if db.rows[TABLE] > u16::MAX.into() {
+            data.u32()?
         } else {
-            // Read 2 bits
-            Self(ReadExt::<u16>::readv(data)?.into())
-        })
+            data.u16()? as u32
+        }))
     }
 }
 
@@ -99,7 +97,7 @@ macro_rules! coded_indices {
                 }
             }
 
-            fn read(db: DbMeta<'_>, data: &mut (impl BufRead + Seek)) -> ReadImageResult<Self> {
+            fn read(db: DbMeta<'_>, data: &mut impl ModuleRead) -> ReadImageResult<Self> {
                 #[repr(u8)]
                 #[derive(TryFromPrimitive)]
                 enum IndexType {
@@ -108,9 +106,9 @@ macro_rules! coded_indices {
 
                 // Read
                 let int = if Self::size(db) == 4 {
-                    data.readv()?
+                    data.u32()?
                 } else {
-                    ReadExt::<u16>::readv(data)? as u32
+                    data.u16()? as u32
                 };
 
                 // Get the tag bits

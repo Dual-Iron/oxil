@@ -13,7 +13,7 @@ macro_rules! tables {
                 // Sum the fields' sizes.
                 0 $(+ <$ftype as DbRead>::size(db))*
             }
-            fn row(db: DbMeta<'_>, data: &mut (impl BufRead + Seek)) -> ReadImageResult<Self> {
+            fn row(db: DbMeta<'_>, data: &mut impl ModuleRead) -> ReadImageResult<Self> {
                 // Read each field.
                 Ok(Self {
                     $($fname: <$ftype as DbRead>::read(db, data)?,)*

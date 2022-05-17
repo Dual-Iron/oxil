@@ -1,9 +1,8 @@
 use crate::{
     error::{ReadImageError::*, ReadImageResult},
-    io::{r, ReadBytes, ReadExt, SeekExt},
+    mod_read, ModuleRead,
 };
 use arrayvec::{ArrayString, ArrayVec};
-use std::io::{BufRead, Seek};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ImageHeader {
@@ -80,16 +79,13 @@ pub struct DataDirectory {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Section {
-    pub name: SectionName,
+    pub name: ArrayString<8>,
     pub virtual_size: u32,
     pub virtual_addr: u32,
     pub size_of_raw_data: u32,
     pub pointer_to_raw_data: u32,
     pub characteristics: u32,
 }
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct SectionName(pub ArrayString<8>);
 
 pub fn section_from(sections: &[Section], rva: u32) -> Option<&Section> {
     sections
@@ -102,13 +98,13 @@ pub fn offset_from(sections: &[Section], rva: u32) -> Option<u32> {
 }
 
 impl ImageHeader {
-    pub fn read(mut data: &mut (impl BufRead + Seek)) -> ReadImageResult<Self> {
+    pub fn read(data: &mut impl ModuleRead) -> ReadImageResult<Self> {
         // https://docs.microsoft.com/en-us/windows/win32/debug/pe-format
         // Fields are skipped if they are reserved, deprecated, or unerringly replaceable
 
-        data.jump(0x3C)?;
-        let offset: u16 = data.readv()?;
-        data.goto(offset.into())?;
+        data.skip(0x3C)?;
+        let goto = data.u16()?;
+        data.goto(goto.into())?;
 
         let pe_signature = data.read_bytes()?;
         if &pe_signature != b"PE\0\0" {
@@ -116,64 +112,64 @@ impl ImageHeader {
         }
 
         let coff = Coff {
-            machine: data.readv()?,
-            number_of_sections: data.readv()?,
-            time_date_stamp: data.readv()?,
-            pointer_to_symbol_table: data.readv()?,
-            number_of_symbols: data.readv()?,
-            size_of_optional_header: data.readv()?,
-            characteristics: data.readv()?,
+            machine: data.u16()?,
+            number_of_sections: data.u16()?,
+            time_date_stamp: data.u32()?,
+            pointer_to_symbol_table: data.u32()?,
+            number_of_symbols: data.u32()?,
+            size_of_optional_header: data.u16()?,
+            characteristics: data.u16()?,
         };
 
-        let pe64 = match data.readv()? {
-            0x10B_u16 => false,
+        let pe64 = match data.u16()? {
+            0x10B => false,
             0x20B => true,
             magic => return Err(Magic(magic)),
         };
 
         let opt = Optional {
-            major_linker_version: data.readv()?,
-            minor_linker_version: data.readv()?,
-            size_of_code: data.readv()?,
-            size_of_initialized_data: data.readv()?,
-            size_of_uninitialized_data: data.readv()?,
-            address_of_entry_point: data.readv()?,
-            base_of_code: data.readv()?,
-            base_of_data: if pe64 { None } else { Some(data.readv()?) },
+            major_linker_version: data.u8()?,
+            minor_linker_version: data.u8()?,
+            size_of_code: data.u32()?,
+            size_of_initialized_data: data.u32()?,
+            size_of_uninitialized_data: data.u32()?,
+            address_of_entry_point: data.u32()?,
+            base_of_code: data.u32()?,
+            base_of_data: if pe64 { None } else { Some(data.u32()?) },
 
-            image_base: r!(data: if pe64 => u64 | u32),
-            section_alignment: data.readv()?,
-            file_alignment: data.readv()?,
-            major_operating_system_version: data.readv()?,
-            minor_operating_system_version: data.readv()?,
-            major_image_version: data.readv()?,
-            minor_image_version: data.readv()?,
-            major_subsystem_version: data.readv()?,
-            minor_subsystem_version: r!(eval data.readv()?, then data.jump(4)?), // skip Win32VersionValue, must be zero
-            size_of_image: data.readv()?,
-            size_of_headers: r!(eval data.readv()?, then data.jump(4)?), // skip CheckSum, I don't know what to do with it anyway
-            subsystem: data.readv()?,
-            dll_characteristics: data.readv()?,
-            size_of_stack_reserve: r!(data: if pe64 => u64 | u32),
-            size_of_stack_commit: r!(data: if pe64 => u64 | u32),
-            size_of_heap_reserve: r!(data: if pe64 => u64 | u32),
-            size_of_heap_commit: r!(eval r!(data: if pe64 => u64 | u32), then data.jump(4)?), // skip LoaderFlags, must be zero
-            num_data_dirs: data.readv()?,
+            image_base: mod_read!(fit data to pe64),
+            section_alignment: data.u32()?,
+            file_alignment: data.u32()?,
+            major_operating_system_version: data.u16()?,
+            minor_operating_system_version: data.u16()?,
+            major_image_version: data.u16()?,
+            minor_image_version: data.u16()?,
+            major_subsystem_version: data.u16()?,
+            minor_subsystem_version: mod_read!(eval data.u16()?, then data.skip(4)?), // skip Win32VersionValue, must be zero
+            size_of_image: data.u32()?,
+            size_of_headers: mod_read!(eval data.u32()?, then data.skip(4)?), // skip CheckSum, I don't know what to do with it anyway
+            subsystem: data.u16()?,
+            dll_characteristics: data.u16()?,
+            size_of_stack_reserve: mod_read!(fit data to pe64),
+            size_of_stack_commit: mod_read!(fit data to pe64),
+            size_of_heap_reserve: mod_read!(fit data to pe64),
+            size_of_heap_commit: mod_read!(eval mod_read!(fit data to pe64), then data.skip(4)?), // skip LoaderFlags, must be zero
+            num_data_dirs: data.u32()?,
 
-            export: data.readv()?,
-            import: data.readv()?,
-            resource: data.readv()?,
-            exception: data.readv()?,
-            certificate: data.readv()?,
-            base_relocation: data.readv()?,
-            debug: r!(eval data.readv()?, then data.jump(8)?), // skip Architecture, must be zero
-            global_ptr: data.readv()?,
-            tls: data.readv()?,
-            load_config: data.readv()?,
-            bound_import: data.readv()?,
-            iat: data.readv()?,
-            delay_import_descriptor: data.readv()?,
-            clr_runtime_header: r!(eval data.readv()?, then data.jump(8)?), // skip Reserved, must be zero
+            export: data.data_dir()?,
+            import: data.data_dir()?,
+            resource: data.data_dir()?,
+            exception: data.data_dir()?,
+            certificate: data.data_dir()?,
+            base_relocation: data.data_dir()?,
+            debug: mod_read!(eval data.data_dir()?, then data.skip(8)?), // skip Architecture, must be zero
+            global_ptr: data.data_dir()?,
+            tls: data.data_dir()?,
+            load_config: data.data_dir()?,
+            bound_import: data.data_dir()?,
+            iat: data.data_dir()?,
+            delay_import_descriptor: data.data_dir()?,
+            clr_runtime_header: mod_read!(eval data.data_dir()?, then data.skip(8)?), // skip Reserved, must be zero
         };
 
         if opt.num_data_dirs != 16 {
@@ -187,12 +183,12 @@ impl ImageHeader {
         let mut sections = ArrayVec::new();
         for _ in 0..coff.number_of_sections {
             sections.push(Section {
-                name: data.readv()?,
-                virtual_size: data.readv()?,
-                virtual_addr: data.readv()?,
-                size_of_raw_data: data.readv()?,
-                pointer_to_raw_data: r!(eval data.readv()?, then data.jump(12)?),
-                characteristics: data.readv()?,
+                name: data.section_name()?,
+                virtual_size: data.u32()?,
+                virtual_addr: data.u32()?,
+                size_of_raw_data: data.u32()?,
+                pointer_to_raw_data: mod_read!(eval data.u32()?, then data.skip(12)?),
+                characteristics: data.u32()?,
             });
         }
 
@@ -288,7 +284,7 @@ mod tests {
             },
             sections: [
                 Section {
-                    name: SectionName(".text\u{0}\u{0}\u{0}".try_into().unwrap()),
+                    name: ".text\u{0}\u{0}\u{0}".try_into().unwrap(),
                     virtual_size: 1624,
                     virtual_addr: 8192,
                     size_of_raw_data: 2048,
@@ -296,7 +292,7 @@ mod tests {
                     characteristics: 1610612768,
                 },
                 Section {
-                    name: SectionName(".rsrc\u{0}\u{0}\u{0}".try_into().unwrap()),
+                    name: ".rsrc\u{0}\u{0}\u{0}".try_into().unwrap(),
                     virtual_size: 1380,
                     virtual_addr: 16384,
                     size_of_raw_data: 1536,
@@ -304,7 +300,7 @@ mod tests {
                     characteristics: 1073741888,
                 },
                 Section {
-                    name: SectionName(".reloc\u{0}\u{0}".try_into().unwrap()),
+                    name: ".reloc\u{0}\u{0}".try_into().unwrap(),
                     virtual_size: 12,
                     virtual_addr: 24576,
                     size_of_raw_data: 512,

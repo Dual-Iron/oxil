@@ -59,5 +59,5 @@ pub enum TableIndex {
 pub trait Table: Sized {
     const INDEX: TableIndex;
     fn row_size(db: DbMeta<'_>) -> u8;
-    fn row(db: DbMeta<'_>, data: &mut (impl BufRead + Seek)) -> ReadImageResult<Self>;
+    fn row(db: DbMeta<'_>, data: &mut impl ModuleRead) -> ReadImageResult<Self>;
 }
