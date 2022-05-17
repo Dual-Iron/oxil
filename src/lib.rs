@@ -1,11 +1,13 @@
 pub mod error;
+pub mod schema;
 
-mod core;
-mod io;
+pub(crate) mod io;
+pub(crate) mod metadata;
+pub(crate) mod pe;
 
 #[cfg(test)]
 mod tests {
-    use crate::core::{
+    use crate::{
         metadata::{CliHeader, MetadataRoot, StreamHeader},
         pe::{self, DataDirectory, ImageHeader},
         schema::Database,

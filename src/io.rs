@@ -1,7 +1,7 @@
-use crate::core::{
+use crate::{
     metadata::{CliVersion, NulString, StreamName},
     pe::{DataDirectory, SectionName},
-    schema::{AssemblyFlags, AssemblyHashAlgorithm},
+    schema::values::{AssemblyFlags, AssemblyHashAlgorithm},
 };
 use arrayvec::{ArrayString, ArrayVec};
 use std::{

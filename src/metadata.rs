@@ -1,11 +1,11 @@
 use crate::{
-    core::pe::DataDirectory,
     error::{
         InvalidImageReason::{self, *},
         ReadImageError::*,
         ReadImageResult,
     },
     io::{r, ReadExt, SeekExt},
+    pe::DataDirectory,
 };
 use arrayvec::ArrayString;
 use std::io::{BufRead, Seek};
