@@ -9,7 +9,7 @@ use std::io::{BufRead, Seek};
 pub struct ImageHeader {
     pub coff: Coff,
     pub opt: Optional,
-    pub sections: ArrayVec<Section, 16>,
+    pub sections: ArrayVec<Section, 16>, // non-copy for some silly reason
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
