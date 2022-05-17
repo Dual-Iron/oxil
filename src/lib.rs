@@ -1,16 +1,21 @@
 pub mod error;
+pub mod read;
 pub mod schema;
 
-pub(crate) mod io;
-pub(crate) mod metadata;
-pub(crate) mod pe;
+mod io;
+mod metadata;
+mod pe;
 
 #[cfg(test)]
 mod tests {
     use crate::{
         metadata::{CliHeader, MetadataRoot, StreamHeader},
         pe::{self, DataDirectory, ImageHeader},
-        schema::Database,
+        read::Image,
+        schema::{
+            index::{GuidIndex, StringIndex},
+            table::*,
+        },
     };
     use std::io::{BufRead, Cursor, Seek, SeekFrom};
 
@@ -57,16 +62,18 @@ mod tests {
     #[test]
     fn test_tables() {
         let mut data = data();
+        let image = Image::read(&mut data).unwrap();
+        let module: Option<Module> = image.db.row(image.tables_offset, 0, &mut data).unwrap();
 
-        let metadata = get_metadata(&mut data);
-
-        data.seek(SeekFrom::Start(
-            metadata.file_offset + metadata.tables.offset as u64,
-        ))
-        .unwrap();
-
-        let db = Database::read(&mut data).unwrap();
-
-        dbg!(db);
+        assert_eq!(
+            module.unwrap(),
+            Module {
+                generation: 0,
+                name: StringIndex(0x16D),
+                mvid: GuidIndex(1),
+                enc_id: GuidIndex(0),
+                enc_base_id: GuidIndex(0)
+            }
+        )
     }
 }

@@ -2,14 +2,14 @@ use crate::{
     error::{InvalidImageReason::*, ReadImageError::*, ReadImageResult},
     io::{r, ReadBytes, ReadExt, SeekExt},
 };
-use arrayvec::ArrayString;
+use arrayvec::{ArrayString, ArrayVec};
 use std::io::{BufRead, Seek};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ImageHeader {
     pub coff: Coff,
     pub opt: Optional,
-    pub sections: Vec<Section>,
+    pub sections: ArrayVec<Section, 16>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -72,13 +72,13 @@ pub struct Optional {
     pub clr_runtime_header: DataDirectory,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct DataDirectory {
     pub rva: u32,
     pub size: u32,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Section {
     pub name: SectionName,
     pub virtual_size: u32,
@@ -88,7 +88,7 @@ pub struct Section {
     pub characteristics: u32,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SectionName(pub ArrayString<8>);
 
 pub fn section_from(sections: &[Section], rva: u32) -> Option<&Section> {
@@ -180,7 +180,11 @@ impl ImageHeader {
             return Err(InvalidImage(DataDirectories(opt.num_data_dirs)));
         }
 
-        let mut sections = Vec::with_capacity(coff.number_of_sections.into());
+        if coff.number_of_sections > 16 {
+            return Err(InvalidImage(SectionCount(coff.number_of_sections)));
+        }
+
+        let mut sections = ArrayVec::new();
         for _ in 0..coff.number_of_sections {
             sections.push(Section {
                 name: data.readv()?,

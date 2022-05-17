@@ -27,7 +27,6 @@ pub struct CliHeader {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct MetadataRoot {
-    pub file_offset: u64,
     pub version: CliVersion,
     pub strings: StreamHeader,
     pub us: StreamHeader,
@@ -66,7 +65,6 @@ impl CliHeader {
 
 impl MetadataRoot {
     pub fn read(data: &mut (impl BufRead + Seek)) -> ReadImageResult<Self> {
-        let file_offset = data.stream_position()?;
         let signature = data.readv()?;
         if signature != 0x424A5342 {
             return Err(InvalidImage(MetadataSignature(signature)));
@@ -107,7 +105,6 @@ impl MetadataRoot {
         // By this point, five unique streams have been parsed, so all the streams are Some.
 
         Ok(Self {
-            file_offset,
             version,
             strings: s.unwrap(),
             us: u.unwrap(),

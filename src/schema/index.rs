@@ -1,32 +1,32 @@
-use super::*;
+use super::{parsing::*, *};
 
 // # Simple indices
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct String(pub u32);
+pub struct StringIndex(pub u32);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Guid(pub u32);
+pub struct GuidIndex(pub u32);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Blob(pub u32);
+pub struct BlobIndex(pub u32);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Row<const TABLE: usize>(pub u32);
+pub struct RowIndex<const TABLE: usize>(pub u32);
 
 macro_rules! db_read_stream {
     ($name:ident, $bit:literal) => {
         impl DbRead for $name {
-            fn size(db: DbCtor<'_>) -> u8 {
-                if db.lstreams.bits & $bit != 0 {
+            fn size(db: DbMeta<'_>) -> u8 {
+                if db.lstreams.bits() & $bit != 0 {
                     4
                 } else {
                     2
                 }
             }
 
-            fn read(db: DbCtor<'_>, data: &mut (impl BufRead + Seek)) -> ReadImageResult<Self> {
-                Ok(if db.lstreams.bits & $bit != 0 {
+            fn read(db: DbMeta<'_>, data: &mut (impl BufRead + Seek)) -> ReadImageResult<Self> {
+                Ok(if db.lstreams.bits() & $bit != 0 {
                     Self(data.readv()?)
                 } else {
                     Self(ReadExt::<u16>::readv(data)?.into())
@@ -36,12 +36,12 @@ macro_rules! db_read_stream {
     };
 }
 
-db_read_stream!(String, 0x1);
-db_read_stream!(Guid, 0x2);
-db_read_stream!(Blob, 0x4);
+db_read_stream!(StringIndex, 0x1);
+db_read_stream!(GuidIndex, 0x2);
+db_read_stream!(BlobIndex, 0x4);
 
-impl<const TABLE: usize> DbRead for Row<TABLE> {
-    fn size(db: DbCtor<'_>) -> u8 {
+impl<const TABLE: usize> DbRead for RowIndex<TABLE> {
+    fn size(db: DbMeta<'_>) -> u8 {
         if db.rows[TABLE] > u16::MAX.into() {
             4
         } else {
@@ -49,7 +49,7 @@ impl<const TABLE: usize> DbRead for Row<TABLE> {
         }
     }
 
-    fn read(db: DbCtor<'_>, data: &mut (impl BufRead + Seek)) -> ReadImageResult<Self> {
+    fn read(db: DbMeta<'_>, data: &mut (impl BufRead + Seek)) -> ReadImageResult<Self> {
         Ok(if db.rows[TABLE] > u16::MAX.into() {
             // Read 4 bits
             Self(data.readv()?)
@@ -68,7 +68,7 @@ macro_rules! coded_indices {
         pub struct $name(TableIndex, pub u32);
 
         impl DbRead for $name {
-            fn size(db: DbCtor<'_>) -> u8 {
+            fn size(db: DbMeta<'_>) -> u8 {
                 let max_rows = 0 $(.max(db.rows[TableIndex::$vname as usize]))+ ;
                 if max_rows > 2u32.pow(16 - $bits) {
                     4
@@ -77,7 +77,7 @@ macro_rules! coded_indices {
                 }
             }
 
-            fn read(db: DbCtor<'_>, data: &mut (impl BufRead + Seek)) -> ReadImageResult<Self> {
+            fn read(db: DbMeta<'_>, data: &mut (impl BufRead + Seek)) -> ReadImageResult<Self> {
                 #[repr(u8)]
                 #[derive(TryFromPrimitive)]
                 enum IndexType {
