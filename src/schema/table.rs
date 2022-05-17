@@ -1,4 +1,4 @@
-use super::{index::*, parsing::*, values::*, *};
+use super::{parsing::*, structures::*, *};
 
 macro_rules! tables {
     ( $($name:ident ( $($fname:ident: $ftype:ty),* ) )+ ) => {$(

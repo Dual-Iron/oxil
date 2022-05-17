@@ -1,6 +1,28 @@
 use super::{parsing::*, *};
+use num_enum::TryFromPrimitive;
 
-// # Simple indices
+// Flags
+
+bitflags::bitflags! {
+    pub struct AssemblyFlags: u32 {
+        const PUBLIC_KEY = 0x1;
+        const RETARGETABLE = 0x100;
+        const DISABLE_JIT_COMPILE_OPTIMIZER = 0x4000;
+        const ENABLE_JIT_COMPILE_TRACKING = 0x8000;
+    }
+}
+
+// Enums
+
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, TryFromPrimitive)]
+pub enum AssemblyHashAlgorithm {
+    None = 0,
+    MD5 = 0x8003,
+    SHA1 = 0x8004,
+}
+
+// Indexes
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct StringIndex(pub u32);
@@ -18,7 +40,7 @@ macro_rules! db_read_stream {
     ($name:ident, $bit:literal) => {
         impl DbRead for $name {
             fn size(db: DbMeta<'_>) -> u8 {
-                if db.lstreams.bits() & $bit != 0 {
+                if db.lstreams & $bit != 0 {
                     4
                 } else {
                     2
@@ -26,7 +48,7 @@ macro_rules! db_read_stream {
             }
 
             fn read(db: DbMeta<'_>, data: &mut (impl BufRead + Seek)) -> ReadImageResult<Self> {
-                Ok(if db.lstreams.bits() & $bit != 0 {
+                Ok(if db.lstreams & $bit != 0 {
                     Self(data.readv()?)
                 } else {
                     Self(ReadExt::<u16>::readv(data)?.into())

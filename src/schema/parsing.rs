@@ -2,16 +2,8 @@ use super::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct DbMeta<'a> {
-    pub lstreams: LargeStreams,
+    pub lstreams: u8,
     pub rows: &'a [u32],
-}
-
-bitflags::bitflags! {
-    pub struct LargeStreams: u8 {
-        const STRING = 0x1;
-        const GUID = 0x2;
-        const BLOB = 0x4;
-    }
 }
 
 #[repr(u8)]

@@ -1,6 +1,5 @@
-pub mod index;
+pub mod structures;
 pub mod table;
-pub mod values;
 
 pub(crate) mod parsing;
 
@@ -9,7 +8,7 @@ use crate::{
     io::{ReadExt, SeekExt},
 };
 use num_enum::TryFromPrimitive;
-use parsing::{DbMeta, LargeStreams, Table, TableIndex};
+use parsing::{DbMeta, Table, TableIndex};
 use std::io::{BufRead, Seek};
 
 const TABLE_COUNT: usize = 0x2D;
@@ -17,7 +16,7 @@ const TABLE_COUNT: usize = 0x2D;
 #[must_use]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Db {
-    lstreams: LargeStreams,
+    lstreams: u8,
     row_count: [u32; TABLE_COUNT], // The number of rows in the table. Used for bounds checking tables and calculating table index sizes
     row_size: [u8; TABLE_COUNT], // The row size in bytes. Used for reading from a specific row in a table
     offsets: [u32; TABLE_COUNT], // The file offset from metadata root. Used for quickly jumping to the start of a table
@@ -26,7 +25,7 @@ pub struct Db {
 impl Db {
     pub fn read(data: &mut (impl BufRead + Seek)) -> ReadImageResult<Self> {
         data.jump(6)?;
-        let lstreams = LargeStreams::from_bits_truncate(data.readv()?);
+        let lstreams = data.readv()?;
         data.jump(1)?;
         let valid: u64 = data.readv()?;
         if valid >> TABLE_COUNT != 0 {
@@ -133,5 +132,5 @@ db_read!(u8 = 1);
 db_read!(u16 = 2);
 db_read!(u32 = 4);
 db_read!(u64 = 8);
-db_read!(values::AssemblyFlags = 4);
-db_read!(values::AssemblyHashAlgorithm = 4);
+db_read!(structures::AssemblyFlags = 4);
+db_read!(structures::AssemblyHashAlgorithm = 4);

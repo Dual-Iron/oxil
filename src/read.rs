@@ -82,7 +82,7 @@ impl<T: BufRead + Seek> DeferredReader<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::{index::*, table::Module};
+    use crate::schema::{structures::*, table::Module};
 
     #[test]
     fn module_table() {
