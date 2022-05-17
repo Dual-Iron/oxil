@@ -96,7 +96,7 @@ macro_rules! coded_indices {
                 let tag = tag as u8;
 
                 // Get matching table for the tag bits
-                let index_type = tag.try_into().map_err(|_| InvalidImage(CodedIndex(tag)))?;
+                let index_type = tag.try_into().map_err(|_| CodedIndex(tag))?;
                 let table = match index_type {
                     $( IndexType::$vname => TableIndex::$vname, )+
                 };

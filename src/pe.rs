@@ -1,5 +1,5 @@
 use crate::{
-    error::{InvalidImageReason::*, ReadImageError::*, ReadImageResult},
+    error::{ReadImageError::*, ReadImageResult},
     io::{r, ReadBytes, ReadExt, SeekExt},
 };
 use arrayvec::{ArrayString, ArrayVec};
@@ -112,7 +112,7 @@ impl ImageHeader {
 
         let pe_signature = data.read_bytes()?;
         if &pe_signature != b"PE\0\0" {
-            return Err(InvalidImage(PeSignature(pe_signature)));
+            return Err(PeSignature(pe_signature));
         }
 
         let coff = Coff {
@@ -128,7 +128,7 @@ impl ImageHeader {
         let pe64 = match data.readv()? {
             0x10B_u16 => false,
             0x20B => true,
-            magic => return Err(InvalidImage(Magic(magic))),
+            magic => return Err(Magic(magic)),
         };
 
         let opt = Optional {
@@ -177,11 +177,11 @@ impl ImageHeader {
         };
 
         if opt.num_data_dirs != 16 {
-            return Err(InvalidImage(DataDirectories(opt.num_data_dirs)));
+            return Err(DataDirectories(opt.num_data_dirs));
         }
 
         if coff.number_of_sections > 16 {
-            return Err(InvalidImage(SectionCount(coff.number_of_sections)));
+            return Err(SectionCount(coff.number_of_sections));
         }
 
         let mut sections = ArrayVec::new();

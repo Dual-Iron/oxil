@@ -1,7 +1,6 @@
 use crate::{
     error::{
-        InvalidImageReason::{self, *},
-        ReadImageError::*,
+        ReadImageError::{self, *},
         ReadImageResult,
     },
     io::{r, ReadExt, SeekExt},
@@ -67,14 +66,14 @@ impl MetadataRoot {
     pub fn read(data: &mut (impl BufRead + Seek)) -> ReadImageResult<Self> {
         let signature = data.readv()?;
         if signature != 0x424A5342 {
-            return Err(InvalidImage(MetadataSignature(signature)));
+            return Err(MetadataSignature(signature));
         }
         data.jump(8)?; // skip MajorVersion + MinorVersion, always 1
         let version: CliVersion = data.readv()?;
         data.jump(2)?; // skip Flags, always 0
         let stream_count = data.readv()?;
         if stream_count != 5 {
-            return Err(InvalidImage(StreamCount(stream_count)));
+            return Err(StreamCount(stream_count));
         }
 
         // String, UserString, Blob, Guid, and Table streams respectively.
@@ -92,12 +91,12 @@ impl MetadataRoot {
                 "#Blob\0\0\0" => &mut b,
                 "#GUID\0\0\0" => &mut g,
                 "#~\0\0" => &mut t,
-                _ => return Err(InvalidImage(InvalidImageReason::StreamName(name.0))),
+                _ => return Err(ReadImageError::StreamName(name.0)),
             };
 
             // Don't allow duplicate streams.
             match stream {
-                Some(_) => return Err(InvalidImage(StreamDuplicate(name.0))),
+                Some(_) => return Err(StreamDuplicate(name.0)),
                 None => *stream = Some(StreamHeader { offset, size }),
             };
         }

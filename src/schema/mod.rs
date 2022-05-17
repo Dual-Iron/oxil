@@ -5,7 +5,7 @@ pub mod values;
 mod parsing;
 
 use crate::{
-    error::{InvalidImageReason::*, ReadImageError::*, ReadImageResult},
+    error::{ReadImageError::*, ReadImageResult},
     io::{ReadExt, SeekExt},
 };
 use num_enum::TryFromPrimitive;
@@ -30,7 +30,7 @@ impl Db {
         data.jump(1)?;
         let valid: u64 = data.readv()?;
         if valid >> TABLE_COUNT != 0 {
-            return Err(InvalidImage(TableCount(valid)));
+            return Err(TableCount(valid));
         }
         data.jump(8)?; // Tables that should be sorted are listed in section II.24 and never change
 

@@ -1,5 +1,5 @@
 use crate::{
-    error::{InvalidImageReason::*, ReadImageError::*, ReadImageResult},
+    error::{ReadImageError::*, ReadImageResult},
     io::SeekExt,
     metadata::{CliHeader, MetadataRoot},
     pe::{self, ImageHeader},
@@ -24,14 +24,14 @@ impl Image {
         let rva = pe.opt.clr_runtime_header.rva;
         data.goto(
             pe::offset_from(&pe.sections, rva)
-                .ok_or(InvalidImage(RvaOutOfRange(rva)))?
+                .ok_or(RvaOutOfRange(rva))?
                 .into(),
         )?;
         let cli = CliHeader::read(data)?;
         let rva = cli.metadata.rva;
         data.goto(
             pe::offset_from(&pe.sections, rva)
-                .ok_or(InvalidImage(RvaOutOfRange(rva)))?
+                .ok_or(RvaOutOfRange(rva))?
                 .into(),
         )?;
         let metadata_offset = data.stream_position()?;
