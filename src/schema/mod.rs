@@ -2,7 +2,7 @@ pub mod index;
 pub mod table;
 pub mod values;
 
-mod parsing;
+pub(crate) mod parsing;
 
 use crate::{
     error::{ReadImageError::*, ReadImageResult},
@@ -85,22 +85,22 @@ impl Db {
         self.offsets[idx as usize]
     }
 
-    pub fn row<T: parsing::Table>(
+    pub fn row<Table: parsing::Table, Data: BufRead + Seek>(
         &self,
+        data: &mut Data,
         table_stream_offset: u64,
         row_index: u32,
-        data: &mut (impl BufRead + Seek),
-    ) -> ReadImageResult<Option<T>> {
-        if row_index >= self.row_count(T::INDEX) {
+    ) -> ReadImageResult<Option<Table>> {
+        if row_index >= self.row_count(Table::INDEX) {
             return Ok(None);
         }
 
-        let root_pos = table_stream_offset + self.offset(T::INDEX) as u64;
-        let row_offset = row_index * self.row_size(T::INDEX) as u32;
+        let root_pos = table_stream_offset + self.offset(Table::INDEX) as u64;
+        let row_offset = row_index * self.row_size(Table::INDEX) as u32;
 
         data.goto(root_pos + row_offset as u64)?;
 
-        Ok(Some(T::row(self.meta(), data)?))
+        Ok(Some(Table::row(self.meta(), data)?))
     }
 
     fn meta(&self) -> DbMeta {

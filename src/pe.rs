@@ -203,3 +203,117 @@ impl ImageHeader {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn image_header() {
+        let image = ImageHeader::read(&mut crate::hello_world_test()).expect("image header");
+
+        assert_eq!(image, hello_world_header());
+    }
+
+    fn hello_world_header() -> ImageHeader {
+        ImageHeader {
+            coff: Coff {
+                machine: 0x14C,
+                number_of_sections: 3,
+                time_date_stamp: 3028023590,
+                pointer_to_symbol_table: 0,
+                number_of_symbols: 0,
+                size_of_optional_header: 224,
+                characteristics: 34,
+            },
+            opt: Optional {
+                major_linker_version: 48,
+                minor_linker_version: 0,
+                size_of_code: 0x800,
+                size_of_initialized_data: 0x800,
+                size_of_uninitialized_data: 0,
+                address_of_entry_point: 9810,
+                base_of_code: 0x2000,
+                base_of_data: Some(0x4000),
+                image_base: 0x400000,
+                section_alignment: 0x2000,
+                file_alignment: 0x200,
+                major_operating_system_version: 4,
+                minor_operating_system_version: 0,
+                major_image_version: 0,
+                minor_image_version: 0,
+                major_subsystem_version: 4,
+                minor_subsystem_version: 0,
+                size_of_image: 0x8000,
+                size_of_headers: 0x200,
+                subsystem: 3,
+                dll_characteristics: 34144,
+                size_of_stack_reserve: 0x100000,
+                size_of_stack_commit: 0x1000,
+                size_of_heap_reserve: 0x100000,
+                size_of_heap_commit: 0x1000,
+                num_data_dirs: 16,
+                export: DataDirectory { rva: 0, size: 0 },
+                import: DataDirectory {
+                    rva: 0x25FD,
+                    size: 0x4F,
+                },
+                resource: DataDirectory {
+                    rva: 0x4000,
+                    size: 0x564,
+                },
+                exception: DataDirectory { rva: 0, size: 0 },
+                certificate: DataDirectory { rva: 0, size: 0 },
+                base_relocation: DataDirectory {
+                    rva: 0x6000,
+                    size: 0xC,
+                },
+                debug: DataDirectory {
+                    rva: 0x2528,
+                    size: 0x54,
+                },
+                global_ptr: DataDirectory { rva: 0, size: 0 },
+                tls: DataDirectory { rva: 0, size: 0 },
+                load_config: DataDirectory { rva: 0, size: 0 },
+                bound_import: DataDirectory { rva: 0, size: 0 },
+                iat: DataDirectory {
+                    rva: 0x2000,
+                    size: 0x8,
+                },
+                delay_import_descriptor: DataDirectory { rva: 0, size: 0 },
+                clr_runtime_header: DataDirectory {
+                    rva: 0x2008,
+                    size: 0x48,
+                },
+            },
+            sections: [
+                Section {
+                    name: SectionName(".text\u{0}\u{0}\u{0}".try_into().unwrap()),
+                    virtual_size: 1624,
+                    virtual_addr: 8192,
+                    size_of_raw_data: 2048,
+                    pointer_to_raw_data: 512,
+                    characteristics: 1610612768,
+                },
+                Section {
+                    name: SectionName(".rsrc\u{0}\u{0}\u{0}".try_into().unwrap()),
+                    virtual_size: 1380,
+                    virtual_addr: 16384,
+                    size_of_raw_data: 1536,
+                    pointer_to_raw_data: 2560,
+                    characteristics: 1073741888,
+                },
+                Section {
+                    name: SectionName(".reloc\u{0}\u{0}".try_into().unwrap()),
+                    virtual_size: 12,
+                    virtual_addr: 24576,
+                    size_of_raw_data: 512,
+                    pointer_to_raw_data: 4096,
+                    characteristics: 1107296320,
+                },
+            ]
+            .into_iter()
+            .collect(),
+        }
+    }
+}

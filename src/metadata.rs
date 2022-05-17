@@ -113,3 +113,53 @@ impl MetadataRoot {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pe::{offset_from, ImageHeader};
+
+    #[test]
+    fn metadata() {
+        fn get_metadata(data: &mut (impl BufRead + Seek)) -> ReadImageResult<MetadataRoot> {
+            let image = ImageHeader::read(data)?;
+            let offset = offset_from(&image.sections, image.opt.clr_runtime_header.rva).unwrap();
+            data.goto(offset.into())?;
+            let cli_header = CliHeader::read(data)?;
+            let offset = offset_from(&image.sections, cli_header.metadata.rva).unwrap();
+            data.goto(offset.into())?;
+
+            MetadataRoot::read(data)
+        }
+
+        let metadata = get_metadata(&mut crate::hello_world_test()).unwrap();
+
+        assert_eq!(metadata, hello_world_metadata());
+    }
+
+    fn hello_world_metadata() -> MetadataRoot {
+        MetadataRoot {
+            version: CliVersion("v4.0.30319\u{0}\u{0}".try_into().unwrap()),
+            strings: StreamHeader {
+                offset: 0x1E4,
+                size: 0x1F4,
+            },
+            us: StreamHeader {
+                offset: 0x3D8,
+                size: 0x20,
+            },
+            blob: StreamHeader {
+                offset: 0x408,
+                size: 0xC4,
+            },
+            guid: StreamHeader {
+                offset: 0x3F8,
+                size: 0x10,
+            },
+            tables: StreamHeader {
+                offset: 0x6C,
+                size: 0x178,
+            },
+        }
+    }
+}
