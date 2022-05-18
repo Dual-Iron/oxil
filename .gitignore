@@ -1,2 +1,5 @@
 /target
 /Cargo.lock
+/cs/bin
+/cs/obj
+/cs/.vs
